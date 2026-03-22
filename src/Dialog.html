@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 13px;
+      padding: 16px;
+      margin: 0;
+      background: #fff;
+      color: #333;
+    }
+    h3 { margin: 0 0 14px; font-size: 15px; color: #1a1a1a; }
+    label { display: block; margin-top: 12px; font-weight: bold; }
+    select, input[type="text"] {
+      width: 100%;
+      padding: 6px 8px;
+      margin-top: 4px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .hint { color: #888; font-size: 11px; margin-top: 3px; font-weight: normal; }
+    .row { display: flex; gap: 10px; }
+    .row > div { flex: 1; }
+    .check-row { display: flex; align-items: center; gap: 6px; margin-top: 12px; }
+    .check-row input { width: auto; }
+    .btn-row { display: flex; gap: 10px; margin-top: 20px; }
+    button {
+      flex: 1;
+      padding: 9px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    #btnRun { background: #4a86e8; color: #fff; }
+    #btnRun:hover { background: #3a76d8; }
+    #btnCancel { background: #f0f0f0; color: #333; }
+    #btnCancel:hover { background: #e0e0e0; }
+    #msg {
+      margin-top: 12px;
+      padding: 8px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      display: none;
+    }
+    .msg-success { background: #e6f4ea; color: #1e6e2e; display: block !important; }
+    .msg-error   { background: #fce8e6; color: #c5221f; display: block !important; }
+    .msg-running { background: #e8f0fe; color: #1a73e8; display: block !important; }
+    .plan-badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: bold;
+      margin-left: 6px;
+    }
+    .free { background: #f0f0f0; color: #555; }
+    .pro  { background: #fce8a3; color: #7c4d00; }
+    .divider { border: none; border-top: 1px solid #e0e0e0; margin: 14px 0 4px; }
+  </style>
+</head>
+<body>
+  <h3>
+    SheetDiff - Compare Sheets
+    <span id="planBadge" class="plan-badge free">Free</span>
+  </h3>
+
+  <div class="row">
+    <div>
+      <label>Source Sheet (Old)
+        <div class="hint">The baseline / reference</div>
+      </label>
+      <select id="srcSheet"></select>
+    </div>
+    <div>
+      <label>Dest Sheet (New)
+        <div class="hint">The sheet to compare against</div>
+      </label>
+      <select id="dstSheet"></select>
+    </div>
+  </div>
+
+  <label>Key Column(s)
+    <span class="hint">Comma-separated header names for row matching. Leave empty to use row numbers.</span>
+    <input type="text" id="keyColumns" placeholder="e.g.  ID,  Order No"/>
+  </label>
+
+  <div class="check-row">
+    <input type="checkbox" id="hasHeader" checked>
+    <label for="hasHeader" style="margin:0; font-weight: normal;">First row is header</label>
+  </div>
+
+  <hr class="divider">
+
+  <div style="font-size:11px; color:#888;">
+    Free plan: up to 100 rows. <a href="#" onclick="openLicense()">Upgrade to Pro</a> for unlimited.
+  </div>
+
+  <div class="btn-row">
+    <button id="btnRun" onclick="runCompare()">Compare</button>
+    <button id="btnCancel" onclick="google.script.host.close()">Cancel</button>
+  </div>
+
+  <div id="msg"></div>
+
+  <script>
+    // シート名一覧を読み込む
+    google.script.run
+      .withSuccessHandler(function(names) {
+        var srcSel = document.getElementById('srcSheet');
+        var dstSel = document.getElementById('dstSheet');
+        names.forEach(function(n, i) {
+          srcSel.appendChild(new Option(n, n));
+          dstSel.appendChild(new Option(n, n));
+        });
+        // デフォルト: src=0, dst=1
+        if (names.length > 1) dstSel.selectedIndex = 1;
+      })
+      .getSheetNames();
+
+    // プラン状態を反映
+    google.script.run
+      .withSuccessHandler(function(r) {
+        var badge = document.getElementById('planBadge');
+        if (r.isPro) {
+          badge.textContent = 'Pro';
+          badge.className = 'plan-badge pro';
+        }
+      })
+      .getLicenseStatus();
+
+    function setMsg(text, type) {
+      var el = document.getElementById('msg');
+      el.className = 'msg-' + type;
+      el.textContent = text;
+    }
+
+    function runCompare() {
+      var config = {
+        srcSheetName: document.getElementById('srcSheet').value,
+        dstSheetName: document.getElementById('dstSheet').value,
+        keyColumns:   document.getElementById('keyColumns').value,
+        hasHeader:    document.getElementById('hasHeader').checked,
+      };
+
+      if (config.srcSheetName === config.dstSheetName) {
+        setMsg('Source and destination must be different sheets.', 'error');
+        return;
+      }
+
+      setMsg('Running comparison...', 'running');
+      document.getElementById('btnRun').disabled = true;
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          document.getElementById('btnRun').disabled = false;
+          if (result.success) {
+            var s = result.summary;
+            setMsg(
+              'Done!  Added: ' + s.added +
+              '  Deleted: ' + s.deleted +
+              '  Modified: ' + s.modified +
+              '  (Report: ' + s.reportSheet + ')',
+              'success'
+            );
+            setTimeout(function() { google.script.host.close(); }, 2500);
+          } else {
+            setMsg(result.message, 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          document.getElementById('btnRun').disabled = false;
+          setMsg('Error: ' + err.message, 'error');
+        })
+        .runCompare(config);
+    }
+
+    function openLicense() {
+      google.script.host.close();
+      google.script.run.showLicenseDialog();
+    }
+  </script>
+</body>
+</html>
